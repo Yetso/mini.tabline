@@ -20,6 +20,9 @@
 ---
 --- - Extra information section in case of multiple Neovim tabpages.
 ---
+--- - Icons from |MiniTabline.default_format()| are colored with their own
+---   highlight group (requires Neovim>=0.12).
+---
 --- - Truncation symbols which show if there are tabs to the left and/or right.
 ---   Exact characters are taken from |'listchars'| global value (`precedes` and
 ---   `extends` fields) and are shown only if |'list'| option is enabled.
@@ -107,11 +110,11 @@ MiniTabline.setup = function(config)
   H.create_default_hl()
 
   -- Function to make tabs clickable
-  vim.api.nvim_exec(
+  vim.api.nvim_exec2(
     [[function! MiniTablineSwitchBuffer(buf_id, clicks, button, mod)
         execute 'buffer' a:buf_id
       endfunction]],
-    false
+    {}
   )
 end
 
@@ -164,6 +167,8 @@ end
 --- Used by default as `config.format`.
 --- Prepends label with padded icon based on buffer's name (if `show_icon`
 --- in |MiniTabline.config| is `true`) and surrounds label with single space.
+--- On Neovim>=0.12 the icon is colored with the highlight group provided by
+--- |mini.icons| (or 'nvim-web-devicons').
 --- Note: it is meant to be used only as part of `format` in |MiniTabline.config|.
 ---
 ---@param buf_id number Buffer identifier.
@@ -196,6 +201,9 @@ H.trunc = { left = '', right = '', needs_left = false, needs_right = false }
 
 -- Buffer number of center buffer
 H.center_buf_id = nil
+
+-- Whether 'tabline' supports `%$` (highlight group inheriting attributes)
+H.can_stack_hl = vim.fn.has('nvim-0.12') == 1
 
 -- Helper functionality =======================================================
 -- Settings -------------------------------------------------------------------
@@ -389,7 +397,16 @@ H.finalize_labels = function()
   local format = config.format or MiniTabline.default_format
   for _, tab in pairs(H.tabs) do
     tab.label = format(tab.buf_id, tab.label)
+    tab.icon, tab.icon_hl = H.get_icon_data(tab.buf_id)
   end
+end
+
+-- Icon (and its highlight group) as used in `default_format()`, if it can be
+-- colored. Uses buffer's full name, same as `default_format()`, so that the
+-- icon can later be found inside the formatted label.
+H.get_icon_data = function(buf_id)
+  if H.get_icon == nil or not H.can_stack_hl then return nil, nil end
+  return H.get_icon(vim.api.nvim_buf_get_name(buf_id))
 end
 
 H.get_nonunique_buf_ids = function()
@@ -514,7 +531,8 @@ H.concat_tabs = function()
   if H.trunc.needs_left then table.insert(t, '%#MiniTablineTrunc#' .. H.trunc.left:gsub('%%', '%%%%')) end
   for _, tab in ipairs(H.tabs) do
     -- Escape '%' in labels
-    table.insert(t, tab.hl .. tab.tabfunc .. tab.label:gsub('%%', '%%%%'))
+    local label = tab.label:gsub('%%', '%%%%')
+    table.insert(t, tab.hl .. tab.tabfunc .. H.color_icon(label, tab))
   end
   if H.trunc.needs_right then table.insert(t, '%#MiniTablineTrunc#' .. H.trunc.right:gsub('%%', '%%%%')) end
 
@@ -529,6 +547,17 @@ H.concat_tabs = function()
   end
 
   return res
+end
+
+-- Color first occurrence of tab's icon with icon's highlight group. Done at
+-- the very end as labels are treated as plain text while fitting the width.
+-- If icon was truncated, it is left as is.
+H.color_icon = function(label, tab)
+  if tab.icon == nil or tab.icon == '' or tab.icon_hl == nil then return label end
+  local from, to = label:find(tab.icon, 1, true)
+  if from == nil then return label end
+  -- Use `%$` so that icon highlight inherits attributes (like background)
+  return label:sub(1, from - 1) .. '%$' .. tab.icon_hl .. '$' .. tab.icon .. tab.hl .. label:sub(to + 1)
 end
 
 -- Utilities ------------------------------------------------------------------
@@ -550,13 +579,19 @@ H.ensure_get_icon = function(config)
     return
   elseif _G.MiniIcons ~= nil then
     -- Prefer 'mini.icons'
-    H.get_icon = function(name) return (_G.MiniIcons.get('file', name)) end
+    H.get_icon = function(name)
+      local icon, hl = _G.MiniIcons.get('file', name)
+      return icon, hl
+    end
   else
     -- Try falling back to 'nvim-web-devicons'
     local has_devicons, devicons = pcall(require, 'nvim-web-devicons')
     if not has_devicons then return end
     -- Use basename because it makes exact file name matching work
-    H.get_icon = function(name) return (devicons.get_icon(vim.fn.fnamemodify(name, ':t'), nil, { default = true })) end
+    H.get_icon = function(name)
+      local icon, hl = devicons.get_icon(vim.fn.fnamemodify(name, ':t'), nil, { default = true })
+      return icon, hl
+    end
   end
 end
 

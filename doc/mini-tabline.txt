@@ -22,6 +22,9 @@ Features:
 
 - Extra information section in case of multiple Neovim tabpages.
 
+- Icons from |MiniTabline.default_format()| are colored with their own
+  highlight group (requires Neovim>=0.12).
+
 - Truncation symbols which show if there are tabs to the left and/or right.
   Exact characters are taken from |'listchars'| global value (`precedes` and
   `extends` fields) and are shown only if |'list'| option is enabled.
@@ -138,6 +141,8 @@ Default tab format
 Used by default as `config.format`.
 Prepends label with padded icon based on buffer's name (if `show_icon`
 in |MiniTabline.config| is `true`) and surrounds label with single space.
+On Neovim>=0.12 the icon is colored with the highlight group provided by
+|mini.icons| (or 'nvim-web-devicons').
 Note: it is meant to be used only as part of `format` in |MiniTabline.config|.
 
 Parameters ~

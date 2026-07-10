@@ -107,12 +107,10 @@ MiniTabline.setup = function(config)
   H.create_default_hl()
 
   -- Function to make tabs clickable
-  vim.api.nvim_exec(
+  vim.api.nvim_exec2(
     [[function! MiniTablineSwitchBuffer(buf_id, clicks, button, mod)
         execute 'buffer' a:buf_id
-      endfunction]],
-    false
-  )
+      endfunction]], {})
 end
 
 --- Defaults ~
@@ -280,6 +278,7 @@ H.list_tabs = function()
       tab['hl'] = H.construct_highlight(buf_id)
       tab['tabfunc'] = '%' .. buf_id .. '@MiniTablineSwitchBuffer@'
       tab['label'], tab['label_extender'] = H.construct_label_data(buf_id)
+      tab['icon'] = H.construct_icon_with_hl(tab['label'], tab['hl'])
 
       table.insert(tabs, tab)
     end
@@ -323,6 +322,21 @@ H.make_path_extender = function(buf_id)
     local pattern = string.format('[^%s]+%s%s$', H.path_sep, H.path_sep, vim.pesc(label))
     return string.match(full_path, pattern) or label
   end
+end
+
+H.construct_icon_with_hl = function(filename, original_hl)
+  local config = H.get_config()
+  H.ensure_get_icon(config)
+
+  local icon, hl_type = H.get_icon(filename)
+  if not hl_type then
+    if not icon then
+        return ''
+    end
+    return icon
+  end
+
+  return '%$' .. hl_type .. '$' .. icon .. original_hl
 end
 
 -- Work with unnamed buffers --------------------------------------------------
@@ -506,7 +520,8 @@ H.concat_tabs = function()
   if H.trunc.needs_left then table.insert(t, '%#MiniTablineTrunc#' .. H.trunc.left:gsub('%%', '%%%%')) end
   for _, tab in ipairs(H.tabs) do
     -- Escape '%' in labels
-    table.insert(t, tab.hl .. tab.tabfunc .. tab.label:gsub('%%', '%%%%'))
+    local icon_to_replace = tab.icon:gsub("%%$.-%$", ""):gsub("%%#.-#", ""):gsub("%s+", "")
+    table.insert(t, tab.hl .. tab.tabfunc .. tab.label:gsub('%%', '%%%%'):gsub(vim.pesc(icon_to_replace), vim.pesc(tab.icon)))
   end
   if H.trunc.needs_right then table.insert(t, '%#MiniTablineTrunc#' .. H.trunc.right:gsub('%%', '%%%%')) end
 
@@ -542,7 +557,7 @@ H.ensure_get_icon = function(config)
     return
   elseif _G.MiniIcons ~= nil then
     -- Prefer 'mini.icons'
-    H.get_icon = function(name) return (_G.MiniIcons.get('file', name)) end
+    H.get_icon = function(name) return _G.MiniIcons.get('file', name) end
   else
     -- Try falling back to 'nvim-web-devicons'
     local has_devicons, devicons = pcall(require, 'nvim-web-devicons')

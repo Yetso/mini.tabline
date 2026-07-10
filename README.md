@@ -34,6 +34,7 @@ https://user-images.githubusercontent.com/24854248/173045373-f5bdea82-fe3e-4488-
 - Current buffer is displayed "optimally centered" (in center of screen while maximizing the total number of buffers shown) when there are many buffers open.
 - 'Buffer tabs' are clickable if Neovim allows it.
 - Extra information section in case of multiple Neovim tabpages.
+- Icons are colored with their own highlight group (requires Neovim>=0.12).
 - Truncation symbols which show if there are tabs to the left and/or right. Exact characters are taken from 'listchars' option (`precedes` and `extends` fields) and are shown only if 'list' option is enabled.
 
 ## Dependencies

@@ -270,7 +270,12 @@ end
 
 -- Work with tabs -------------------------------------------------------------
 -- List tabs
+H.visible_bufs = {}
 H.list_tabs = function()
+  for _, win_id in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    H.visible_bufs[vim.api.nvim_win_get_buf(win_id)] = true
+  end
+
   local tabs = {}
   for _, buf_id in ipairs(vim.api.nvim_list_bufs()) do
     if vim.bo[buf_id].buflisted then
@@ -278,7 +283,7 @@ H.list_tabs = function()
       tab['hl'] = H.construct_highlight(buf_id)
       tab['tabfunc'] = '%' .. buf_id .. '@MiniTablineSwitchBuffer@'
       tab['label'], tab['label_extender'] = H.construct_label_data(buf_id)
-      tab['icon'] = H.construct_icon_with_hl(tab['label'], tab['hl'])
+      tab['icon'], tab['icon_bare'] = H.construct_icon_with_hl(tab['label'], tab['hl'])
 
       table.insert(tabs, tab)
     end
@@ -290,7 +295,7 @@ end
 -- Tab's highlight group
 H.construct_highlight = function(buf_id)
   local hl_type = buf_id == vim.api.nvim_get_current_buf() and 'Current'
-    or (vim.fn.bufwinnr(buf_id) > 0 and 'Visible' or 'Hidden')
+    or (H.visible_bufs[buf_id] and 'Visible' or 'Hidden')
   if vim.bo[buf_id].modified then hl_type = 'Modified' .. hl_type end
 
   return '%#MiniTabline' .. hl_type .. '#'
@@ -304,7 +309,7 @@ H.construct_label_data = function(buf_id)
   if bufpath ~= '' then
     -- Process path buffer
     label = vim.fn.fnamemodify(bufpath, ':t')
-    label_extender = H.make_path_extender(buf_id)
+    label_extender = H.make_path_extender(bufpath)
   else
     -- Process unnamed buffer
     label = H.make_unnamed_label(buf_id)
@@ -314,29 +319,41 @@ H.construct_label_data = function(buf_id)
   return label, label_extender
 end
 
-H.make_path_extender = function(buf_id)
+H.make_path_extender = function(bufpath)
   -- Add parent to current label (if possible)
   return function(label)
-    local full_path = vim.api.nvim_buf_get_name(buf_id)
     -- Using `vim.pesc` prevents effect of problematic characters (like '.')
     local pattern = string.format('[^%s]+%s%s$', H.path_sep, H.path_sep, vim.pesc(label))
-    return string.match(full_path, pattern) or label
+    return string.match(bufpath, pattern) or label
   end
 end
 
+H.icon_cache = {}
 H.construct_icon_with_hl = function(filename, original_hl)
+  local key = filename .. "\0" .. original_hl
+  local cached = H.icon_cache[key]
+  if cached then
+    return cached.hl_icon, cached.bare_icon
+  end
+
   local config = H.get_config()
   H.ensure_get_icon(config)
 
+  local result = ''
+  local bare_icon = ''
   local icon, hl_type = H.get_icon(filename)
-  if not hl_type then
-    if not icon then
-        return ''
+  if icon then
+    bare_icon = icon
+    if hl_type then
+      result = '%$' .. hl_type .. '$' .. icon .. original_hl
+    else
+      result = icon
     end
-    return icon
   end
 
-  return '%$' .. hl_type .. '$' .. icon .. original_hl
+  H.icon_cache[key] = { hl_icon = result, bare_icon = bare_icon }
+  return result, bare_icon
+
 end
 
 -- Work with unnamed buffers --------------------------------------------------
@@ -520,7 +537,7 @@ H.concat_tabs = function()
   if H.trunc.needs_left then table.insert(t, '%#MiniTablineTrunc#' .. H.trunc.left:gsub('%%', '%%%%')) end
   for _, tab in ipairs(H.tabs) do
     -- Escape '%' in labels
-    local icon_to_replace = tab.icon:gsub("%%$.-%$", ""):gsub("%%#.-#", ""):gsub("%s+", "")
+    local icon_to_replace = tab.icon_bare:gsub("%s+", "")
     table.insert(t, tab.hl .. tab.tabfunc .. tab.label:gsub('%%', '%%%%'):gsub(vim.pesc(icon_to_replace), vim.pesc(tab.icon)))
   end
   if H.trunc.needs_right then table.insert(t, '%#MiniTablineTrunc#' .. H.trunc.right:gsub('%%', '%%%%')) end

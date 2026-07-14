@@ -202,6 +202,13 @@ H.trunc = { left = '', right = '', needs_left = false, needs_right = false }
 -- Buffer number of center buffer
 H.center_buf_id = nil
 
+-- Buffers displayed in some window of current tabpage. Recomputed on every
+-- redraw as it is faster than calling |bufwinnr()| for every buffer.
+H.visible_bufs = {}
+
+-- Cache of icon data per buffer name
+H.icon_cache = {}
+
 -- Whether 'tabline' supports `%$` (highlight group inheriting attributes)
 H.can_stack_hl = vim.fn.has('nvim-0.12') == 1
 
@@ -226,6 +233,9 @@ H.apply_config = function(config)
 
   -- Cache truncation characters
   H.cache_trunc_chars()
+
+  -- Reset icon cache as icon settings might have changed
+  H.icon_cache = {}
 
   -- Set tabline string
   vim.o.tabline = '%!v:lua.MiniTabline.make_tabline_string()'
@@ -281,6 +291,11 @@ end
 -- Work with tabs -------------------------------------------------------------
 -- List tabs
 H.list_tabs = function()
+  H.visible_bufs = {}
+  for _, win_id in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    H.visible_bufs[vim.api.nvim_win_get_buf(win_id)] = true
+  end
+
   local tabs = {}
   for _, buf_id in ipairs(vim.api.nvim_list_bufs()) do
     if vim.bo[buf_id].buflisted then
@@ -299,7 +314,7 @@ end
 -- Tab's highlight group
 H.construct_highlight = function(buf_id)
   local hl_type = buf_id == vim.api.nvim_get_current_buf() and 'Current'
-    or (vim.fn.bufwinnr(buf_id) > 0 and 'Visible' or 'Hidden')
+    or (H.visible_bufs[buf_id] and 'Visible' or 'Hidden')
   if vim.bo[buf_id].modified then hl_type = 'Modified' .. hl_type end
 
   return '%#MiniTabline' .. hl_type .. '#'
@@ -313,7 +328,7 @@ H.construct_label_data = function(buf_id)
   if bufpath ~= '' then
     -- Process path buffer
     label = vim.fn.fnamemodify(bufpath, ':t')
-    label_extender = H.make_path_extender(buf_id)
+    label_extender = H.make_path_extender(bufpath)
   else
     -- Process unnamed buffer
     label = H.make_unnamed_label(buf_id)
@@ -323,13 +338,12 @@ H.construct_label_data = function(buf_id)
   return label, label_extender
 end
 
-H.make_path_extender = function(buf_id)
+H.make_path_extender = function(bufpath)
   -- Add parent to current label (if possible)
   return function(label)
-    local full_path = vim.api.nvim_buf_get_name(buf_id)
     -- Using `vim.pesc` prevents effect of problematic characters (like '.')
     local pattern = string.format('[^%s]+%s%s$', H.path_sep, H.path_sep, vim.pesc(label))
-    return string.match(full_path, pattern) or label
+    return string.match(bufpath, pattern) or label
   end
 end
 
@@ -406,7 +420,14 @@ end
 -- icon can later be found inside the formatted label.
 H.get_icon_data = function(buf_id)
   if H.get_icon == nil or not H.can_stack_hl then return nil, nil end
-  return H.get_icon(vim.api.nvim_buf_get_name(buf_id))
+  local name = vim.api.nvim_buf_get_name(buf_id)
+  local cached = H.icon_cache[name]
+  if cached == nil then
+    local icon, hl = H.get_icon(name)
+    cached = { icon = icon, hl = hl }
+    H.icon_cache[name] = cached
+  end
+  return cached.icon, cached.hl
 end
 
 H.get_nonunique_buf_ids = function()

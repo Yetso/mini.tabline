@@ -302,7 +302,7 @@ H.construct_highlight = function(buf_id)
     or (H.visible_bufs[buf_id] and 'Visible' or 'Hidden')
   if vim.bo[buf_id].modified then hl_type = 'Modified' .. hl_type end
 
-  return '%#MiniTabline' .. hl_type .. '#'
+  return '%$MiniTabline' .. hl_type .. '$'
 end
 
 -- Tab's label and label extender
@@ -539,22 +539,22 @@ end
 H.concat_tabs = function()
   -- NOTE: it is assumed that all padding is incorporated into labels
   local t = {}
-  if H.trunc.needs_left then table.insert(t, '%#MiniTablineTrunc#' .. H.trunc.left:gsub('%%', '%%%%')) end
+  if H.trunc.needs_left then table.insert(t, '%$MiniTablineTrunc$' .. H.trunc.left:gsub('%%', '%%%%')) end
   for _, tab in ipairs(H.tabs) do
     -- Escape '%' in labels
     local icon_to_replace = tab.icon_bare:gsub("%s+", "")
     table.insert(t, tab.hl .. tab.tabfunc .. tab.label:gsub('%%', '%%%%'):gsub(vim.pesc(icon_to_replace), vim.pesc(tab.icon)))
   end
-  if H.trunc.needs_right then table.insert(t, '%#MiniTablineTrunc#' .. H.trunc.right:gsub('%%', '%%%%')) end
+  if H.trunc.needs_right then table.insert(t, '%$MiniTablineTrunc$' .. H.trunc.right:gsub('%%', '%%%%')) end
 
   -- Usage of `%X` makes filled space to the right "non-clickable"
-  local res = table.concat(t, '') .. '%X%#MiniTablineFill#'
+  local res = table.concat(t, '') .. '%X%$MiniTablineFill$'
 
   -- Add tabpage section
   if H.tabpage_section ~= '' then
     local position = H.get_config().tabpage_section
-    if position == 'left' then res = '%#MiniTablineTabpagesection#' .. H.tabpage_section .. res end
-    if position == 'right' then res = res .. '%=%#MiniTablineTabpagesection#' .. H.tabpage_section end
+    if position == 'left' then res = '%$MiniTablineTabpagesection$' .. H.tabpage_section .. res end
+    if position == 'right' then res = res .. '%=%$MiniTablineTabpagesection$' .. H.tabpage_section end
   end
 
   return res

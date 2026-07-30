@@ -143,7 +143,10 @@ MiniTabline.config = {
   tabpage_section = 'left',
 
   -- Default name for unnamed buffers
-  unnamed_buffer_name = "*"
+  unnamed_buffer_name = "*",
+
+  -- Put a separator between the tab
+  separator = "",
 }
 --minidoc_afterlines_end
 
@@ -208,6 +211,7 @@ H.setup_config = function(config)
   H.check_type('format', config.format, 'function', true)
   H.check_type('tabpage_section', config.tabpage_section, 'string')
   H.check_type('unnamed_buffer_name', config.unnamed_buffer_name, 'string')
+  H.check_type('separator', config.separator, 'string')
 
   return config
 end
@@ -452,7 +456,7 @@ H.fit_width = function()
   local center_offset = 1
   local tot_width = 0
   for _, tab in pairs(H.tabs) do
-    tab.label_width = H.strwidth(tab.label)
+    tab.label_width = H.strwidth(tab.label) + H.strwidth(H.get_config().separator)
     tab.chars_on_left = tot_width
 
     tot_width = tot_width + tab.label_width
@@ -539,11 +543,12 @@ end
 H.concat_tabs = function()
   -- NOTE: it is assumed that all padding is incorporated into labels
   local t = {}
+  local config = H.get_config()
   if H.trunc.needs_left then table.insert(t, '%$MiniTablineTrunc$' .. H.trunc.left:gsub('%%', '%%%%')) end
   for _, tab in ipairs(H.tabs) do
     -- Escape '%' in labels
     local icon_to_replace = tab.icon_bare:gsub("%s+", "")
-    table.insert(t, tab.hl .. tab.tabfunc .. tab.label:gsub('%%', '%%%%'):gsub(vim.pesc(icon_to_replace), vim.pesc(tab.icon)))
+    table.insert(t, tab.hl .. tab.tabfunc .. tab.label:gsub('%%', '%%%%'):gsub(vim.pesc(icon_to_replace), vim.pesc(tab.icon)) .. config.separator)
   end
   if H.trunc.needs_right then table.insert(t, '%$MiniTablineTrunc$' .. H.trunc.right:gsub('%%', '%%%%')) end
 

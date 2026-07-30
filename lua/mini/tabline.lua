@@ -146,6 +146,9 @@ MiniTabline.config = {
   -- Where to show tabpage section in case of multiple vim tabpages.
   -- One of 'left', 'right', 'none'.
   tabpage_section = 'left',
+
+  -- Label for unnamed buffers (scratch and quickfix buffers have own labels)
+  unnamed_buffer_name = '*',
 }
 --minidoc_afterlines_end
 
@@ -221,6 +224,7 @@ H.setup_config = function(config)
   H.check_type('show_icons', config.show_icons, 'boolean')
   H.check_type('format', config.format, 'function', true)
   H.check_type('tabpage_section', config.tabpage_section, 'string')
+  H.check_type('unnamed_buffer_name', config.unnamed_buffer_name, 'string')
 
   return config
 end
@@ -296,13 +300,14 @@ H.list_tabs = function()
     H.visible_bufs[vim.api.nvim_win_get_buf(win_id)] = true
   end
 
+  local config = H.get_config()
   local tabs = {}
   for _, buf_id in ipairs(vim.api.nvim_list_bufs()) do
     if vim.bo[buf_id].buflisted then
       local tab = { buf_id = buf_id }
       tab['hl'] = H.construct_highlight(buf_id)
       tab['tabfunc'] = '%' .. buf_id .. '@MiniTablineSwitchBuffer@'
-      tab['label'], tab['label_extender'] = H.construct_label_data(buf_id)
+      tab['label'], tab['label_extender'] = H.construct_label_data(buf_id, config)
 
       table.insert(tabs, tab)
     end
@@ -321,7 +326,7 @@ H.construct_highlight = function(buf_id)
 end
 
 -- Tab's label and label extender
-H.construct_label_data = function(buf_id)
+H.construct_label_data = function(buf_id, config)
   local label, label_extender
 
   local bufpath = vim.api.nvim_buf_get_name(buf_id)
@@ -331,7 +336,7 @@ H.construct_label_data = function(buf_id)
     label_extender = H.make_path_extender(bufpath)
   else
     -- Process unnamed buffer
-    label = H.make_unnamed_label(buf_id)
+    label = H.make_unnamed_label(buf_id, config)
     label_extender = function(x) return x end
   end
 
@@ -354,13 +359,13 @@ end
 -- - Create three unnamed buffers.
 -- - Delete second one.
 -- - Tab label for third one remains the same.
-H.make_unnamed_label = function(buf_id)
+H.make_unnamed_label = function(buf_id, config)
   local buftype = vim.bo[buf_id].buftype
   -- Differentiate quickfix/location lists and scratch/other unnamed buffers
   local label = buftype == 'quickfix'
       -- There can be only one quickfix buffer and many location buffers
       and (vim.fn.getqflist({ qfbufnr = true }).qfbufnr == buf_id and '*quickfix*' or '*location*')
-    or ((buftype == 'nofile' or buftype == 'acwrite') and '!' or '*')
+    or ((buftype == 'nofile' or buftype == 'acwrite') and '!' or config.unnamed_buffer_name)
 
   -- Possibly add tracking id
   local unnamed_id = H.get_unnamed_id(buf_id)

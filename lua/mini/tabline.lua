@@ -141,6 +141,9 @@ MiniTabline.config = {
   -- Where to show tabpage section in case of multiple vim tabpages.
   -- One of 'left', 'right', 'none'.
   tabpage_section = 'left',
+
+  -- Default name for unnamed buffers
+  unnamed_buffer_name = "*"
 }
 --minidoc_afterlines_end
 
@@ -204,6 +207,7 @@ H.setup_config = function(config)
   H.check_type('show_icons', config.show_icons, 'boolean')
   H.check_type('format', config.format, 'function', true)
   H.check_type('tabpage_section', config.tabpage_section, 'string')
+  H.check_type('unnamed_buffer_name', config.unnamed_buffer_name, 'string')
 
   return config
 end
@@ -364,12 +368,13 @@ end
 -- - Delete second one.
 -- - Tab label for third one remains the same.
 H.make_unnamed_label = function(buf_id)
+  local config = H.get_config()
   local buftype = vim.bo[buf_id].buftype
   -- Differentiate quickfix/location lists and scratch/other unnamed buffers
   local label = buftype == 'quickfix'
       -- There can be only one quickfix buffer and many location buffers
       and (vim.fn.getqflist({ qfbufnr = true }).qfbufnr == buf_id and '*quickfix*' or '*location*')
-    or ((buftype == 'nofile' or buftype == 'acwrite') and '!' or '*')
+    or ((buftype == 'nofile' or buftype == 'acwrite') and '!' or config.unnamed_buffer_name)
 
   -- Possibly add tracking id
   local unnamed_id = H.get_unnamed_id(buf_id)

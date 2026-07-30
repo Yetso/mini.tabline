@@ -147,6 +147,9 @@ Stable branch:
   -- Where to show tabpage section in case of multiple vim tabpages.
   -- One of 'left', 'right', 'none'.
   tabpage_section = 'left',
+
+  -- Label for unnamed buffers (scratch and quickfix buffers have own labels)
+  unnamed_buffer_name = '*',
 }
 ```
 

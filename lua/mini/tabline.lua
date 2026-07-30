@@ -149,6 +149,9 @@ MiniTabline.config = {
 
   -- Label for unnamed buffers (scratch and quickfix buffers have own labels)
   unnamed_buffer_name = '*',
+
+  -- String added after every tab label
+  separator = '',
 }
 --minidoc_afterlines_end
 
@@ -225,6 +228,7 @@ H.setup_config = function(config)
   H.check_type('format', config.format, 'function', true)
   H.check_type('tabpage_section', config.tabpage_section, 'string')
   H.check_type('unnamed_buffer_name', config.unnamed_buffer_name, 'string')
+  H.check_type('separator', config.separator, 'string')
 
   return config
 end
@@ -412,10 +416,11 @@ H.finalize_labels = function()
   -- - Ensure cached `get_icon` for `default_format` (for better performance)
   H.ensure_get_icon(config)
 
-  -- - Apply formatting
+  -- - Apply formatting. Separator is a part of label so that it is accounted
+  --   for when fitting the width.
   local format = config.format or MiniTabline.default_format
   for _, tab in pairs(H.tabs) do
-    tab.label = format(tab.buf_id, tab.label)
+    tab.label = format(tab.buf_id, tab.label) .. config.separator
     tab.icon, tab.icon_hl = H.get_icon_data(tab.buf_id)
   end
 end

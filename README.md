@@ -150,6 +150,9 @@ Stable branch:
 
   -- Label for unnamed buffers (scratch and quickfix buffers have own labels)
   unnamed_buffer_name = '*',
+
+  -- String added after every tab label
+  separator = '',
 }
 ```
 

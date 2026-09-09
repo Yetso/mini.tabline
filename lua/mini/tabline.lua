@@ -163,6 +163,77 @@ MiniTabline.make_tabline_string = function()
   return H.concat_tabs()
 end
 
+--- Move current buffer tab
+---@param direction number Positive integer to move right, negative to move left
+MiniTabline.move_current_tab = function(direction)
+  if H.is_disabled() then return end
+  local cur_buf = vim.api.nvim_get_current_buf()
+  local current_idx = nil
+
+  -- Find current buffer in our tracked order
+  for i, b in ipairs(H.buffer_order) do
+    if b == cur_buf then
+      current_idx = i
+      break
+    end
+  end
+
+  if not current_idx then return end
+
+  local new_idx = current_idx + direction
+  -- Wrap around bounds
+  if new_idx < 1 then new_idx = #H.buffer_order end
+  if new_idx > #H.buffer_order then new_idx = 1 end
+
+  -- Reposition
+  table.remove(H.buffer_order, current_idx)
+  table.insert(H.buffer_order, new_idx, cur_buf)
+
+  vim.cmd('redrawtabline')
+end
+
+MiniTabline.goto_tab = function(position)
+  if H.is_disabled() then return end
+  if position > #H.buffer_order then return end
+  vim.cmd("buffer " .. H.buffer_order[position])
+end
+
+MiniTabline.goto_previous_tab = function()
+  if H.is_disabled() then return end
+  local cur_buf = vim.api.nvim_get_current_buf()
+  local current_idx = nil
+
+  -- Find current buffer in our tracked order
+  for i, b in ipairs(H.buffer_order) do
+    if b == cur_buf then
+      current_idx = i
+      break
+    end
+  end
+
+  if not current_idx then return end
+  local previous_buffer_idx = current_idx ~= 1 and current_idx - 1 or #H.buffer_order
+  vim.cmd("buffer " .. H.buffer_order[previous_buffer_idx])
+end
+
+MiniTabline.goto_next_tab = function()
+  if H.is_disabled() then return end
+  local cur_buf = vim.api.nvim_get_current_buf()
+  local current_idx = nil
+
+  -- Find current buffer in our tracked order
+  for i, b in ipairs(H.buffer_order) do
+    if b == cur_buf then
+      current_idx = i
+      break
+    end
+  end
+
+  if not current_idx then return end
+  local next_buffer_idx = current_idx ~= #H.buffer_order and current_idx + 1 or 1
+  vim.cmd("buffer " .. H.buffer_order[next_buffer_idx])
+end
+
 --- Default tab format
 ---
 --- Used by default as `config.format`.
@@ -185,6 +256,9 @@ H.default_config = vim.deepcopy(MiniTabline.config)
 
 -- Table to keep track of tabs
 H.tabs = {}
+
+-- Array to keep stateful order of buffer IDs
+H.buffer_order = {}
 
 -- Keep track of initially unnamed buffers
 H.unnamed_buffers_seq_ids = {}
@@ -284,17 +358,34 @@ H.list_tabs = function()
     H.visible_bufs[vim.api.nvim_win_get_buf(win_id)] = true
   end
 
-  local tabs = {}
+  local listed_bufs = {}
+  local current_order_set = {}
+  for _, b in ipairs(H.buffer_order) do current_order_set[b] = true end
+
   for _, buf_id in ipairs(vim.api.nvim_list_bufs()) do
     if vim.bo[buf_id].buflisted then
-      local tab = { buf_id = buf_id }
-      tab['hl'] = H.construct_highlight(buf_id)
-      tab['tabfunc'] = '%' .. buf_id .. '@MiniTablineSwitchBuffer@'
-      tab['label'], tab['label_extender'] = H.construct_label_data(buf_id)
-      tab['icon'], tab['icon_bare'] = H.construct_icon_with_hl(tab['label'], tab['hl'])
-
-      table.insert(tabs, tab)
+      listed_bufs[buf_id] = true
+      -- If buffer is newly opened, append it to our stateful array
+      if not current_order_set[buf_id] then
+        table.insert(H.buffer_order, buf_id)
+      end
     end
+  end
+
+  -- Remove dead/deleted buffers from our order tracking array
+  H.buffer_order = vim.tbl_filter(function(b) return listed_bufs[b] end, H.buffer_order)
+
+  -- Construct final tabs using our managed order instead of standard neovim order
+  local tabs = {}
+  for i, buf_id in ipairs(H.buffer_order) do
+    local tab = { buf_id = buf_id }
+    tab['hl'] = H.construct_highlight(buf_id)
+    tab['tabfunc'] = '%' .. buf_id .. '@MiniTablineSwitchBuffer@'
+    tab['label'], tab['label_extender'] = H.construct_label_data(buf_id)
+    tab['icon'], tab['icon_bare'] = H.construct_icon_with_hl(tab['label'], tab['hl'])
+    tab['position'] = i
+
+    table.insert(tabs, tab)
   end
 
   H.tabs = tabs
@@ -408,10 +499,14 @@ H.finalize_labels = function()
 
     -- Extend labels
     for _, buf_id in ipairs(nonunique_buf_ids) do
-      local tab = H.tabs[buf_id]
-      local old_label = tab.label
-      tab.label = tab.label_extender(tab.label)
-      if old_label ~= tab.label then nothing_changed = false end
+      -- We must iterate against array items since tabs are ordered objects now
+      for _, tab in ipairs(H.tabs) do
+         if tab.buf_id == buf_id then
+            local old_label = tab.label
+            tab.label = tab.label_extender(tab.label)
+            if old_label ~= tab.label then nothing_changed = false end
+         end
+      end
     end
 
     if nothing_changed then break end
@@ -439,8 +534,8 @@ H.get_nonunique_buf_ids = function()
   end
 
   local res = {}
-  for i, tab in ipairs(H.tabs) do
-    if label_counts[tab.label] > 1 then table.insert(res, i) end
+  for _, tab in ipairs(H.tabs) do
+    if label_counts[tab.label] > 1 then table.insert(res, tab.buf_id) end
   end
   return res
 end
@@ -456,6 +551,7 @@ H.fit_width = function()
   local center_offset = 1
   local tot_width = 0
   for _, tab in pairs(H.tabs) do
+    tab.label = " " .. tab.position .. tab.label
     tab.label_width = H.strwidth(tab.label) + H.strwidth(H.get_config().separator)
     tab.chars_on_left = tot_width
 

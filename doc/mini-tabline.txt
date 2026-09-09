@@ -7,7 +7,8 @@ MIT License Copyright (c) 2021 Evgeni Chasnovski
 Key idea: show all listed buffers in readable way with minimal total width.
 
 Features:
-- Buffers are listed in the order of their identifier (see |bufnr()|).
+- Buffers are listed in the order they were added to buffer list. Order can
+  be changed with |MiniTabline.move_current_tab()|.
 
 - Different highlight groups for "states" of buffer affecting "buffer tabs".
 
@@ -28,9 +29,6 @@ Features:
 - Truncation symbols which show if there are tabs to the left and/or right.
   Exact characters are taken from |'listchars'| global value (`precedes` and
   `extends` fields) and are shown only if |'list'| option is enabled.
-
-What it doesn't do:
-- Custom buffer order is not supported.
 
 # Dependencies ~
 
@@ -117,6 +115,9 @@ Defaults ~
 
     -- String added after every tab label
     separator = '',
+
+    -- Whether to show tab position (as used by `goto_tab()`) before its label
+    show_position = true,
   }
 <
 # Format ~
@@ -138,6 +139,34 @@ Example of adding "+" suffix for modified buffers: >lua
                                              *MiniTabline.make_tabline_string()*
                       `MiniTabline.make_tabline_string`()
 Make string for |'tabline'|
+
+------------------------------------------------------------------------------
+                                                *MiniTabline.move_current_tab()*
+                  `MiniTabline.move_current_tab`({direction})
+Move current buffer's tab
+
+Moving past the first or last position wraps around.
+
+Parameters ~
+{direction} `(number)` Positions to move: positive - right, negative - left.
+
+------------------------------------------------------------------------------
+                                                        *MiniTabline.goto_tab()*
+                       `MiniTabline.goto_tab`({position})
+Go to tab at position
+
+Parameters ~
+{position} `(number)` Tab position as shown in tabline (starts at 1).
+
+------------------------------------------------------------------------------
+                                                   *MiniTabline.goto_next_tab()*
+                         `MiniTabline.goto_next_tab`()
+Go to next tab, wrapping around after the last one
+
+------------------------------------------------------------------------------
+                                               *MiniTabline.goto_previous_tab()*
+                       `MiniTabline.goto_previous_tab`()
+Go to previous tab, wrapping around before the first one
 
 ------------------------------------------------------------------------------
                                                   *MiniTabline.default_format()*

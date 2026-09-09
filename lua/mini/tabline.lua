@@ -5,7 +5,8 @@
 --- Key idea: show all listed buffers in readable way with minimal total width.
 ---
 --- Features:
---- - Buffers are listed in the order of their identifier (see |bufnr()|).
+--- - Buffers are listed in the order they were added to buffer list. Order can
+---   be changed with |MiniTabline.move_current_tab()|.
 ---
 --- - Different highlight groups for "states" of buffer affecting "buffer tabs".
 ---
@@ -26,9 +27,6 @@
 --- - Truncation symbols which show if there are tabs to the left and/or right.
 ---   Exact characters are taken from |'listchars'| global value (`precedes` and
 ---   `extends` fields) and are shown only if |'list'| option is enabled.
----
---- What it doesn't do:
---- - Custom buffer order is not supported.
 ---
 --- # Dependencies ~
 ---
@@ -152,6 +150,9 @@ MiniTabline.config = {
 
   -- String added after every tab label
   separator = '',
+
+  -- Whether to show tab position (as used by `goto_tab()`) before its label
+  show_position = true,
 }
 --minidoc_afterlines_end
 
@@ -166,6 +167,53 @@ MiniTabline.make_tabline_string = function()
   H.fit_width()
 
   return H.concat_tabs()
+end
+
+--- Move current buffer's tab
+---
+--- Moving past the first or last position wraps around.
+---
+---@param direction number Positions to move: positive - right, negative - left.
+MiniTabline.move_current_tab = function(direction)
+  H.check_type('direction', direction, 'number')
+  if H.is_disabled() then return end
+  local cur_idx = H.get_current_index()
+  if cur_idx == nil then return end
+
+  local n = #H.buffer_order
+  local new_idx = cur_idx + direction
+  if new_idx < 1 then new_idx = n end
+  if new_idx > n then new_idx = 1 end
+
+  local buf_id = table.remove(H.buffer_order, cur_idx)
+  table.insert(H.buffer_order, new_idx, buf_id)
+  vim.cmd('redrawtabline')
+end
+
+--- Go to tab at position
+---
+---@param position number Tab position as shown in tabline (starts at 1).
+MiniTabline.goto_tab = function(position)
+  H.check_type('position', position, 'number')
+  if H.is_disabled() then return end
+  H.sync_buffer_order()
+  local buf_id = H.buffer_order[position]
+  if buf_id == nil then return end
+  vim.cmd('buffer ' .. buf_id)
+end
+
+--- Go to next tab, wrapping around after the last one
+MiniTabline.goto_next_tab = function()
+  local cur_idx = H.get_current_index()
+  if cur_idx == nil then return end
+  MiniTabline.goto_tab(cur_idx % #H.buffer_order + 1)
+end
+
+--- Go to previous tab, wrapping around before the first one
+MiniTabline.goto_previous_tab = function()
+  local cur_idx = H.get_current_index()
+  if cur_idx == nil then return end
+  MiniTabline.goto_tab((cur_idx - 2) % #H.buffer_order + 1)
 end
 
 --- Default tab format
@@ -192,6 +240,9 @@ H.default_config = vim.deepcopy(MiniTabline.config)
 
 -- Table to keep track of tabs
 H.tabs = {}
+
+-- Buffer identifiers in the order they are shown in tabline
+H.buffer_order = {}
 
 -- Keep track of initially unnamed buffers
 H.unnamed_buffers_seq_ids = {}
@@ -229,6 +280,7 @@ H.setup_config = function(config)
   H.check_type('tabpage_section', config.tabpage_section, 'string')
   H.check_type('unnamed_buffer_name', config.unnamed_buffer_name, 'string')
   H.check_type('separator', config.separator, 'string')
+  H.check_type('show_position', config.show_position, 'boolean')
 
   return config
 end
@@ -304,20 +356,51 @@ H.list_tabs = function()
     H.visible_bufs[vim.api.nvim_win_get_buf(win_id)] = true
   end
 
+  H.sync_buffer_order()
   local config = H.get_config()
   local tabs = {}
-  for _, buf_id in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.bo[buf_id].buflisted then
-      local tab = { buf_id = buf_id }
-      tab['hl'] = H.construct_highlight(buf_id)
-      tab['tabfunc'] = '%' .. buf_id .. '@MiniTablineSwitchBuffer@'
-      tab['label'], tab['label_extender'] = H.construct_label_data(buf_id, config)
+  for i, buf_id in ipairs(H.buffer_order) do
+    local tab = { buf_id = buf_id, position = i }
+    tab['hl'] = H.construct_highlight(buf_id)
+    tab['tabfunc'] = '%' .. buf_id .. '@MiniTablineSwitchBuffer@'
+    tab['label'], tab['label_extender'] = H.construct_label_data(buf_id, config)
 
-      table.insert(tabs, tab)
-    end
+    table.insert(tabs, tab)
   end
 
   H.tabs = tabs
+end
+
+-- Update tab order: remove buffers which are not listed anymore and append
+-- new listed buffers (in order of their identifier)
+H.sync_buffer_order = function()
+  local listed = vim.tbl_filter(function(buf_id) return vim.bo[buf_id].buflisted end, vim.api.nvim_list_bufs())
+  local is_listed = {}
+  for _, buf_id in ipairs(listed) do
+    is_listed[buf_id] = true
+  end
+
+  local order, is_known = {}, {}
+  for _, buf_id in ipairs(H.buffer_order) do
+    if is_listed[buf_id] then
+      table.insert(order, buf_id)
+      is_known[buf_id] = true
+    end
+  end
+  for _, buf_id in ipairs(listed) do
+    if not is_known[buf_id] then table.insert(order, buf_id) end
+  end
+
+  H.buffer_order = order
+end
+
+-- Index of current buffer in tab order (`nil` if it is not listed)
+H.get_current_index = function()
+  H.sync_buffer_order()
+  local cur_buf = vim.api.nvim_get_current_buf()
+  for i, buf_id in ipairs(H.buffer_order) do
+    if buf_id == cur_buf then return i end
+  end
 end
 
 -- Tab's highlight group
@@ -421,6 +504,7 @@ H.finalize_labels = function()
   local format = config.format or MiniTabline.default_format
   for _, tab in pairs(H.tabs) do
     tab.label = format(tab.buf_id, tab.label) .. config.separator
+    if config.show_position then tab.label = ' ' .. tab.position .. tab.label end
     tab.icon, tab.icon_hl = H.get_icon_data(tab.buf_id)
   end
 end

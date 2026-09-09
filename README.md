@@ -28,7 +28,8 @@ https://user-images.githubusercontent.com/24854248/173045373-f5bdea82-fe3e-4488-
 
 ## Features
 
-- Buffers are listed in the order of their identifier.
+- Buffers are listed in the order they were added to buffer list. Order can be changed with `MiniTabline.move_current_tab()`.
+- Navigation by tab position, shown before each label (see [Buffer navigation](#buffer-navigation)).
 - Different highlight groups for "states" of buffer affecting 'buffer tabs'.
 - Buffer names are made unique by extending paths to files or appending unique identifier to buffers without name.
 - Current buffer is displayed "optimally centered" (in center of screen while maximizing the total number of buffers shown) when there are many buffers open.
@@ -153,7 +154,25 @@ Stable branch:
 
   -- String added after every tab label
   separator = '',
+
+  -- Whether to show tab position (as used by `goto_tab()`) before its label
+  show_position = true,
 }
+```
+
+## Buffer navigation
+
+Tabs can be reordered and navigated by their position in the tabline:
+
+```lua
+local tabline = require('mini.tabline')
+vim.keymap.set('n', '<Tab>', tabline.goto_next_tab, { desc = 'Next tab' })
+vim.keymap.set('n', '<S-Tab>', tabline.goto_previous_tab, { desc = 'Previous tab' })
+vim.keymap.set('n', '<M-l>', function() tabline.move_current_tab(1) end, { desc = 'Move tab right' })
+vim.keymap.set('n', '<M-h>', function() tabline.move_current_tab(-1) end, { desc = 'Move tab left' })
+for i = 1, 9 do
+  vim.keymap.set('n', '<Leader>' .. i, function() tabline.goto_tab(i) end, { desc = 'Go to tab ' .. i })
+end
 ```
 
 ## Similar plugins

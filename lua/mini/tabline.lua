@@ -180,10 +180,8 @@ MiniTabline.move_current_tab = function(direction)
   local cur_idx = H.get_current_index()
   if cur_idx == nil then return end
 
-  local n = #H.buffer_order
-  local new_idx = cur_idx + direction
-  if new_idx < 1 then new_idx = n end
-  if new_idx > n then new_idx = 1 end
+  -- Wrap around by any number of positions (Lua's `%` is never negative here)
+  local new_idx = (cur_idx - 1 + direction) % #H.buffer_order + 1
 
   local buf_id = table.remove(H.buffer_order, cur_idx)
   table.insert(H.buffer_order, new_idx, buf_id)

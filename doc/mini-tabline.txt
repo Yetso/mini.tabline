@@ -30,12 +30,20 @@ Features:
   Exact characters are taken from |'listchars'| global value (`precedes` and
   `extends` fields) and are shown only if |'list'| option is enabled.
 
+- Optional diagnostic and git change counts after the label (see
+  `show_diagnostics` and `show_git_changes` in |MiniTabline.config|).
+  They are colored with their own highlight groups (requires Neovim>=0.12).
+
 # Dependencies ~
 
 Suggested dependencies (provide extra functionality, will work without them):
 
 - Enabled |mini.icons| module to show icons near file names.
   Falls back to [nvim-tree/nvim-web-devicons](https://github.com/nvim-tree/nvim-web-devicons)
+  or shows nothing.
+
+- Enabled |mini.diff| module to show git change counts.
+  Falls back to [lewis6991/gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim)
   or shows nothing.
 
 # Setup ~
@@ -68,6 +76,13 @@ Some options are set automatically by |MiniTabline.setup()|:
 - `MiniTablineFill` - unused right space of tabline.
 - `MiniTablineTabpagesection` - section with tabpage information.
 - `MiniTablineTrunc` - truncation symbols indicating more left/right tabs.
+- `MiniTablineDiagnosticError` - count of error diagnostics.
+- `MiniTablineDiagnosticWarn` - count of warning diagnostics.
+- `MiniTablineDiagnosticInfo` - count of info diagnostics.
+- `MiniTablineDiagnosticHint` - count of hint diagnostics.
+- `MiniTablineGitAdd` - count of added lines.
+- `MiniTablineGitChange` - count of changed lines.
+- `MiniTablineGitDelete` - count of deleted lines.
 
 To change any highlight group, set it directly with |nvim_set_hl()|.
 
@@ -118,6 +133,13 @@ Defaults ~
 
     -- Whether to show tab position (as used by `goto_tab()`) before its label
     show_position = true,
+
+    -- Whether to show diagnostic counts after the label
+    show_diagnostics = false,
+
+    -- Whether to show git change counts after the label
+    -- (requires 'mini.diff' or 'gitsigns.nvim')
+    show_git_changes = false,
   }
 <
 # Format ~
@@ -127,6 +149,20 @@ label as arguments and returns a string with formatted label. Output will be
 treated strictly as text (i.e. no |'statusline'| like constructs is allowed).
 This function will be called for all displayable in tabline buffers.
 Default: |MiniTabline.default_format()|.
+
+# Diagnostics and git changes ~
+
+`config.show_diagnostics` adds non-zero diagnostic counts per severity
+(like "E2 W1"). Each count is prefixed with the sign text from
+|vim.diagnostic.config()| (`signs.text`), or with "E", "W", "I", "H".
+
+`config.show_git_changes` adds non-zero counts of added, changed and deleted
+lines (like "+3 ~1 -2"), taken from |mini.diff| (`vim.b.minidiff_summary`)
+or 'gitsigns.nvim' (`vim.b.gitsigns_status_dict`).
+
+Both are added after the formatted label (before `config.separator`) and
+are cached, so they don't slow down tabline redraws. The tabline is
+redrawn when they change.
 
 Example of adding "+" suffix for modified buffers: >lua
 

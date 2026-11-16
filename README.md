@@ -34,12 +34,14 @@ https://user-images.githubusercontent.com/24854248/173045373-f5bdea82-fe3e-4488-
 - Extra information section in case of multiple Neovim tabpages.
 - Icons are colored with their own highlight group (requires Neovim>=0.12).
 - Truncation symbols which show if there are tabs to the left and/or right. Exact characters are taken from 'listchars' option (`precedes` and `extends` fields) and are shown only if 'list' option is enabled.
+- Optional diagnostic and git change counts after the label (`show_diagnostics` and `show_git_changes`), colored with their own highlight groups (requires Neovim>=0.12).
 
 ## Dependencies
 
 For full experience needs (still works without any of suggestions):
 
 - Enabled ['mini.icons'](https://nvim-mini.org/mini.nvim/readmes/mini-icons) module to show icons near file names. Can fall back to using [nvim-tree/nvim-web-devicons](https://github.com/nvim-tree/nvim-web-devicons) plugin.
+- Enabled ['mini.diff'](https://nvim-mini.org/mini.nvim/readmes/mini-diff) module to show git change counts. Can fall back to using [lewis6991/gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim) plugin.
 
 ## Installation
 
@@ -154,6 +156,13 @@ Stable branch:
 
   -- Whether to show tab position (as used by `goto_tab()`) before its label
   show_position = true,
+
+  -- Whether to show diagnostic counts after the label
+  show_diagnostics = false,
+
+  -- Whether to show git change counts after the label
+  -- (requires 'mini.diff' or 'gitsigns.nvim')
+  show_git_changes = false,
 }
 ```
 

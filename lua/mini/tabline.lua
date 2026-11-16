@@ -28,12 +28,20 @@
 ---   Exact characters are taken from |'listchars'| global value (`precedes` and
 ---   `extends` fields) and are shown only if |'list'| option is enabled.
 ---
+--- - Optional diagnostic and git change counts after the label (see
+---   `show_diagnostics` and `show_git_changes` in |MiniTabline.config|).
+---   They are colored with their own highlight groups (requires Neovim>=0.12).
+---
 --- # Dependencies ~
 ---
 --- Suggested dependencies (provide extra functionality, will work without them):
 ---
 --- - Enabled |mini.icons| module to show icons near file names.
 ---   Falls back to [nvim-tree/nvim-web-devicons](https://github.com/nvim-tree/nvim-web-devicons)
+---   or shows nothing.
+---
+--- - Enabled |mini.diff| module to show git change counts.
+---   Falls back to [lewis6991/gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim)
 ---   or shows nothing.
 ---
 --- # Setup ~
@@ -66,6 +74,13 @@
 --- - `MiniTablineFill` - unused right space of tabline.
 --- - `MiniTablineTabpagesection` - section with tabpage information.
 --- - `MiniTablineTrunc` - truncation symbols indicating more left/right tabs.
+--- - `MiniTablineDiagnosticError` - count of error diagnostics.
+--- - `MiniTablineDiagnosticWarn` - count of warning diagnostics.
+--- - `MiniTablineDiagnosticInfo` - count of info diagnostics.
+--- - `MiniTablineDiagnosticHint` - count of hint diagnostics.
+--- - `MiniTablineGitAdd` - count of added lines.
+--- - `MiniTablineGitChange` - count of changed lines.
+--- - `MiniTablineGitDelete` - count of deleted lines.
 ---
 --- To change any highlight group, set it directly with |nvim_set_hl()|.
 ---
@@ -126,6 +141,20 @@ end
 --- This function will be called for all displayable in tabline buffers.
 --- Default: |MiniTabline.default_format()|.
 ---
+--- # Diagnostics and git changes ~
+---
+--- `config.show_diagnostics` adds non-zero diagnostic counts per severity
+--- (like "E2 W1"). Each count is prefixed with the sign text from
+--- |vim.diagnostic.config()| (`signs.text`), or with "E", "W", "I", "H".
+---
+--- `config.show_git_changes` adds non-zero counts of added, changed and deleted
+--- lines (like "+3 ~1 -2"), taken from |mini.diff| (`vim.b.minidiff_summary`)
+--- or 'gitsigns.nvim' (`vim.b.gitsigns_status_dict`).
+---
+--- Both are added after the formatted label (before `config.separator`) and
+--- are cached, so they don't slow down tabline redraws. The tabline is
+--- redrawn when they change.
+---
 --- Example of adding "+" suffix for modified buffers: >lua
 ---
 ---   function(buf_id, label)
@@ -153,6 +182,13 @@ MiniTabline.config = {
 
   -- Whether to show tab position (as used by `goto_tab()`) before its label
   show_position = true,
+
+  -- Whether to show diagnostic counts after the label
+  show_diagnostics = false,
+
+  -- Whether to show git change counts after the label
+  -- (requires 'mini.diff' or 'gitsigns.nvim')
+  show_git_changes = false,
 }
 --minidoc_afterlines_end
 
@@ -267,6 +303,22 @@ H.icon_cache = {}
 -- Whether 'tabline' supports `%$` (highlight group inheriting attributes)
 H.can_stack_hl = vim.fn.has('nvim-0.12') == 1
 
+-- Cache of diagnostic counts per buffer. Entry is reset on |DiagnosticChanged|.
+H.diagnostic_cache = {}
+
+-- Diagnostic severities in display order, with fallback sign and highlight group
+--stylua: ignore
+H.diagnostic_levels = {
+  { severity = vim.diagnostic.severity.ERROR, name = 'ERROR', sign = 'E', hl = 'MiniTablineDiagnosticError' },
+  { severity = vim.diagnostic.severity.WARN,  name = 'WARN',  sign = 'W', hl = 'MiniTablineDiagnosticWarn' },
+  { severity = vim.diagnostic.severity.INFO,  name = 'INFO',  sign = 'I', hl = 'MiniTablineDiagnosticInfo' },
+  { severity = vim.diagnostic.severity.HINT,  name = 'HINT',  sign = 'H', hl = 'MiniTablineDiagnosticHint' },
+}
+
+-- Whether a tabline redraw is already scheduled (to redraw only once when
+-- many buffers are updated at the same time)
+H.redraw_scheduled = false
+
 -- Helper functionality =======================================================
 -- Settings -------------------------------------------------------------------
 H.setup_config = function(config)
@@ -279,6 +331,8 @@ H.setup_config = function(config)
   H.check_type('unnamed_buffer_name', config.unnamed_buffer_name, 'string')
   H.check_type('separator', config.separator, 'string')
   H.check_type('show_position', config.show_position, 'boolean')
+  H.check_type('show_diagnostics', config.show_diagnostics, 'boolean')
+  H.check_type('show_git_changes', config.show_git_changes, 'boolean')
 
   return config
 end
@@ -306,6 +360,32 @@ H.create_autocommands = function()
   local trunc_opts = { group = gr, pattern = { 'list', 'listchars' }, callback = H.cache_trunc_chars }
   trunc_opts.desc = 'Ensure truncation characters'
   vim.api.nvim_create_autocmd('OptionSet', trunc_opts)
+
+  local on_diagnostic_changed = function(args)
+    H.diagnostic_cache[args.buf] = nil
+    if H.get_config().show_diagnostics then H.schedule_redraw() end
+  end
+  local diag_opts = { group = gr, callback = on_diagnostic_changed, desc = 'Update diagnostic counts' }
+  vim.api.nvim_create_autocmd('DiagnosticChanged', diag_opts)
+
+  local on_git_updated = function()
+    if H.get_config().show_git_changes then H.schedule_redraw() end
+  end
+  local git_opts = { group = gr, pattern = { 'MiniDiffUpdated', 'GitSignsUpdate' }, callback = on_git_updated }
+  git_opts.desc = 'Update git change counts'
+  vim.api.nvim_create_autocmd('User', git_opts)
+
+  local on_wipeout = function(args) H.diagnostic_cache[args.buf] = nil end
+  vim.api.nvim_create_autocmd('BufWipeout', { group = gr, callback = on_wipeout, desc = 'Clear diagnostic cache' })
+end
+
+H.schedule_redraw = function()
+  if H.redraw_scheduled then return end
+  H.redraw_scheduled = true
+  vim.schedule(function()
+    H.redraw_scheduled = false
+    vim.cmd('redrawtabline')
+  end)
 end
 
 --stylua: ignore
@@ -326,6 +406,15 @@ H.create_default_hl = function()
   set_default_hl('MiniTablineTabpagesection', { link = 'Search' })
   set_default_hl('MiniTablineFill', { link = 'Normal' })
   set_default_hl('MiniTablineTrunc', { link = 'MiniTablineHidden' })
+
+  set_default_hl('MiniTablineDiagnosticError', { link = 'DiagnosticError' })
+  set_default_hl('MiniTablineDiagnosticWarn',  { link = 'DiagnosticWarn' })
+  set_default_hl('MiniTablineDiagnosticInfo',  { link = 'DiagnosticInfo' })
+  set_default_hl('MiniTablineDiagnosticHint',  { link = 'DiagnosticHint' })
+
+  set_default_hl('MiniTablineGitAdd',    { link = 'Added' })
+  set_default_hl('MiniTablineGitChange', { link = 'Changed' })
+  set_default_hl('MiniTablineGitDelete', { link = 'Removed' })
 end
 
 H.is_disabled = function() return vim.g.minitabline_disable == true or vim.b.minitabline_disable == true end
@@ -500,11 +589,77 @@ H.finalize_labels = function()
   -- - Apply formatting. Separator is a part of label so that it is accounted
   --   for when fitting the width.
   local format = config.format or MiniTabline.default_format
+  local diagnostic_signs = config.show_diagnostics and H.get_diagnostic_signs() or nil
   for _, tab in pairs(H.tabs) do
-    tab.label = format(tab.buf_id, tab.label) .. config.separator
+    tab.decorations = H.make_decorations(tab.buf_id, config, diagnostic_signs)
+    tab.decorations_text = H.concat_decorations(tab.decorations, function(deco) return deco.text end)
+    tab.label = format(tab.buf_id, tab.label) .. tab.decorations_text .. config.separator
     if config.show_position then tab.label = ' ' .. tab.position .. tab.label end
     tab.icon, tab.icon_hl = H.get_icon_data(tab.buf_id)
   end
+end
+
+-- Decorations (diagnostic and git change counts) -----------------------------
+-- Array of `{ text = <string>, hl = <highlight group name> }`
+H.make_decorations = function(buf_id, config, diagnostic_signs)
+  local res = {}
+
+  if config.show_diagnostics then
+    local counts = H.get_diagnostic_counts(buf_id)
+    for _, level in ipairs(H.diagnostic_levels) do
+      local n = counts[level.severity] or 0
+      if n > 0 then table.insert(res, { text = diagnostic_signs[level.severity] .. " " .. n, hl = level.hl }) end
+    end
+  end
+
+  if config.show_git_changes then
+    local add, change, delete = H.get_git_summary(buf_id)
+    if (add or 0) > 0 then table.insert(res, { text = '+' .. add, hl = 'MiniTablineGitAdd' }) end
+    if (change or 0) > 0 then table.insert(res, { text = '~' .. change, hl = 'MiniTablineGitChange' }) end
+    if (delete or 0) > 0 then table.insert(res, { text = '-' .. delete, hl = 'MiniTablineGitDelete' }) end
+  end
+
+  return res
+end
+
+-- Each decoration is followed by a space, same as labels from `default_format()`
+H.concat_decorations = function(decorations, to_string)
+  local parts = {}
+  for _, deco in ipairs(decorations) do
+    table.insert(parts, to_string(deco) .. ' ')
+  end
+  return table.concat(parts)
+end
+
+-- Sign text per severity: from `vim.diagnostic.config().signs.text` (keys can
+-- be severity numbers or names), otherwise a letter
+H.get_diagnostic_signs = function()
+  local signs = vim.diagnostic.config().signs
+  local text = type(signs) == 'table' and type(signs.text) == 'table' and signs.text or {}
+  local res = {}
+  for _, level in ipairs(H.diagnostic_levels) do
+    local sign = text[level.severity] or text[level.name]
+    sign = type(sign) == 'string' and vim.trim(sign) or ''
+    res[level.severity] = sign ~= '' and sign or level.sign
+  end
+  return res
+end
+
+H.get_diagnostic_counts = function(buf_id)
+  local counts = H.diagnostic_cache[buf_id]
+  if counts == nil then
+    counts = vim.diagnostic.count(buf_id)
+    H.diagnostic_cache[buf_id] = counts
+  end
+  return counts
+end
+
+-- Added, changed and deleted line counts from 'mini.diff' or 'gitsigns.nvim'
+H.get_git_summary = function(buf_id)
+  local summary = vim.b[buf_id].minidiff_summary
+  if type(summary) == 'table' and summary.add ~= nil then return summary.add, summary.change, summary.delete end
+  local status = vim.b[buf_id].gitsigns_status_dict
+  if type(status) == 'table' then return status.added, status.changed, status.removed end
 end
 
 -- Icon (and its highlight group) as used in `default_format()`, if it can be
@@ -645,7 +800,7 @@ H.concat_tabs = function()
   for _, tab in ipairs(H.tabs) do
     -- Escape '%' in labels
     local label = tab.label:gsub('%%', '%%%%')
-    table.insert(t, tab.hl .. tab.tabfunc .. H.color_icon(label, tab))
+    table.insert(t, tab.hl .. tab.tabfunc .. H.color_decorations(H.color_icon(label, tab), tab))
   end
   if H.trunc.needs_right then table.insert(t, '%#MiniTablineTrunc#' .. H.trunc.right:gsub('%%', '%%%%')) end
 
@@ -671,6 +826,31 @@ H.color_icon = function(label, tab)
   if from == nil then return label end
   -- Use `%$` so that icon highlight inherits attributes (like background)
   return label:sub(1, from - 1) .. '%$' .. tab.icon_hl .. '$' .. tab.icon .. tab.hl .. label:sub(to + 1)
+end
+
+-- Color tab's decorations with their highlight groups. They are at the end of
+-- the label, so the last occurrence of their text is used (the file name can't
+-- be matched by mistake). If they were truncated, they are left as is.
+H.color_decorations = function(label, tab)
+  if not H.can_stack_hl or tab.decorations_text == '' then return label end
+  local escape = function(x) return (x:gsub('%%', '%%%%')) end
+  local plain = escape(tab.decorations_text)
+  local from = H.find_last(label, plain)
+  if from == nil then return label end
+  local colored = H.concat_decorations(
+    tab.decorations,
+    function(deco) return '%$' .. deco.hl .. '$' .. escape(deco.text) .. tab.hl end
+  )
+  return label:sub(1, from - 1) .. colored .. label:sub(from + #plain)
+end
+
+H.find_last = function(s, pattern)
+  local last, init = nil, 1
+  while true do
+    local from = s:find(pattern, init, true)
+    if from == nil then return last end
+    last, init = from, from + 1
+  end
 end
 
 -- Utilities ------------------------------------------------------------------

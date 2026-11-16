@@ -35,6 +35,7 @@ https://user-images.githubusercontent.com/24854248/173045373-f5bdea82-fe3e-4488-
 - Icons are colored with their own highlight group (requires Neovim>=0.12).
 - Truncation symbols which show if there are tabs to the left and/or right. Exact characters are taken from 'listchars' option (`precedes` and `extends` fields) and are shown only if 'list' option is enabled.
 - Optional diagnostic and git change counts after the label (`show_diagnostics` and `show_git_changes`), colored with their own highlight groups (requires Neovim>=0.12).
+- Optional caps around the current tab (`current_caps`), for example rounded Nerd Font caps.
 
 ## Dependencies
 
@@ -163,6 +164,10 @@ Stable branch:
   -- Whether to show git change counts after the label
   -- (requires 'mini.diff' or 'gitsigns.nvim')
   show_git_changes = false,
+
+  -- Strings around the current tab (like Nerd Font U+E0B6 and U+E0B4 for
+  -- rounded caps, see |MiniTabline.config|)
+  current_caps = { left = '', right = '' },
 }
 ```
 

@@ -81,6 +81,14 @@
 --- - `MiniTablineGitAdd` - count of added lines.
 --- - `MiniTablineGitChange` - count of changed lines.
 --- - `MiniTablineGitDelete` - count of deleted lines.
+--- - `MiniTablineCurrentCap` - caps of current tab (see `current_caps` in
+---   |MiniTabline.config|).
+--- - `MiniTablineModifiedCurrentCap` - caps of current tab if it is modified.
+---
+--- Cap groups are computed (not linked): foreground is the background of
+--- `MiniTablineCurrent` (or `MiniTablineModifiedCurrent`) and background is
+--- the background of `MiniTablineFill`. They are recomputed after setup and on
+--- |ColorScheme|, so change those groups instead.
 ---
 --- To change any highlight group, set it directly with |nvim_set_hl()|.
 ---
@@ -155,6 +163,19 @@ end
 --- are cached, so they don't slow down tabline redraws. The tabline is
 --- redrawn when they change.
 ---
+--- # Current tab caps ~
+---
+--- `config.current_caps` adds `left` and `right` strings around the current
+--- tab (including its position, before `config.separator`). They are colored
+--- with `MiniTablineCurrentCap` (see |MiniTabline-hl-groups|) so that they
+--- look like a rounded (or slanted, etc.) end of the current tab. Example
+--- with rounded Nerd Font caps (U+E0B6 and U+E0B4): >lua
+---
+---   current_caps = { left = '\238\130\182', right = '\238\130\180' }
+--- <
+--- This looks best when other tabs have the same background as
+--- `MiniTablineFill`.
+---
 --- Example of adding "+" suffix for modified buffers: >lua
 ---
 ---   function(buf_id, label)
@@ -189,6 +210,10 @@ MiniTabline.config = {
   -- Whether to show git change counts after the label
   -- (requires 'mini.diff' or 'gitsigns.nvim')
   show_git_changes = false,
+
+  -- Strings around the current tab (like Nerd Font U+E0B6 and U+E0B4 for
+  -- rounded caps, see |MiniTabline.config|)
+  current_caps = { left = '', right = '' },
 }
 --minidoc_afterlines_end
 
@@ -333,6 +358,9 @@ H.setup_config = function(config)
   H.check_type('show_position', config.show_position, 'boolean')
   H.check_type('show_diagnostics', config.show_diagnostics, 'boolean')
   H.check_type('show_git_changes', config.show_git_changes, 'boolean')
+  H.check_type('current_caps', config.current_caps, 'table')
+  H.check_type('current_caps.left', config.current_caps.left, 'string')
+  H.check_type('current_caps.right', config.current_caps.right, 'string')
 
   return config
 end
@@ -415,6 +443,27 @@ H.create_default_hl = function()
   set_default_hl('MiniTablineGitAdd',    { link = 'Added' })
   set_default_hl('MiniTablineGitChange', { link = 'Changed' })
   set_default_hl('MiniTablineGitDelete', { link = 'Removed' })
+
+  -- Scheduled so that changes to source groups made later in the same
+  -- startup script or by other |ColorScheme| autocommands are accounted for
+  vim.schedule(H.create_cap_hl)
+end
+
+-- Cap groups make the caps look like an end of the current tab. They are not
+-- set while drawing the tabline, as setting a highlight group triggers redraw.
+H.create_cap_hl = function()
+  local fill_bg = H.get_displayed_bg('MiniTablineFill')
+  for _, name in ipairs({ 'MiniTablineCurrent', 'MiniTablineModifiedCurrent' }) do
+    vim.api.nvim_set_hl(0, name .. 'Cap', { fg = H.get_displayed_bg(name), bg = fill_bg })
+  end
+end
+
+-- Background color as displayed (accounts for links and 'reverse' attribute)
+H.get_displayed_bg = function(name)
+  local hl = vim.api.nvim_get_hl(0, { name = name, link = false })
+  local normal = vim.api.nvim_get_hl(0, { name = 'Normal', link = false })
+  if hl.reverse then return hl.fg or normal.fg end
+  return hl.bg or normal.bg
 end
 
 H.is_disabled = function() return vim.g.minitabline_disable == true or vim.b.minitabline_disable == true end
@@ -590,11 +639,20 @@ H.finalize_labels = function()
   --   for when fitting the width.
   local format = config.format or MiniTabline.default_format
   local diagnostic_signs = config.show_diagnostics and H.get_diagnostic_signs() or nil
+  local caps = config.current_caps
+  local has_caps = caps.left ~= '' or caps.right ~= ''
+  local cur_buf = vim.api.nvim_get_current_buf()
   for _, tab in pairs(H.tabs) do
     tab.decorations = H.make_decorations(tab.buf_id, config, diagnostic_signs)
     tab.decorations_text = H.concat_decorations(tab.decorations, function(deco) return deco.text end)
-    tab.label = format(tab.buf_id, tab.label) .. tab.decorations_text .. config.separator
-    if config.show_position then tab.label = ' ' .. tab.position .. tab.label end
+    local label = format(tab.buf_id, tab.label) .. tab.decorations_text
+    if config.show_position then label = ' ' .. tab.position .. label end
+    tab.caps = nil
+    if has_caps and tab.buf_id == cur_buf then
+      label = caps.left .. label .. caps.right
+      tab.caps = caps
+    end
+    tab.label = label .. config.separator
     tab.icon, tab.icon_hl = H.get_icon_data(tab.buf_id)
   end
 end
@@ -800,7 +858,8 @@ H.concat_tabs = function()
   for _, tab in ipairs(H.tabs) do
     -- Escape '%' in labels
     local label = tab.label:gsub('%%', '%%%%')
-    table.insert(t, tab.hl .. tab.tabfunc .. H.color_decorations(H.color_icon(label, tab), tab))
+    label = H.color_caps(H.color_decorations(H.color_icon(label, tab), tab), tab)
+    table.insert(t, tab.hl .. tab.tabfunc .. label)
   end
   if H.trunc.needs_right then table.insert(t, '%#MiniTablineTrunc#' .. H.trunc.right:gsub('%%', '%%%%')) end
 
@@ -842,6 +901,28 @@ H.color_decorations = function(label, tab)
     function(deco) return '%$' .. deco.hl .. '$' .. escape(deco.text) .. tab.hl end
   )
   return label:sub(1, from - 1) .. colored .. label:sub(from + #plain)
+end
+
+-- Color caps of current tab. Left cap starts the label, right cap is the last
+-- occurrence of its text (only separator can follow it, which is drawn with
+-- `MiniTablineFill` so that it is outside of the tab). If a cap was
+-- truncated, it is left as is.
+H.color_caps = function(label, tab)
+  if tab.caps == nil then return label end
+  local escape = function(x) return (x:gsub('%%', '%%%%')) end
+  -- `tab.hl` is like '%#MiniTablineCurrent#'
+  local cap_hl = '%#' .. tab.hl:sub(3, -2) .. 'Cap#'
+
+  local left = escape(tab.caps.left)
+  if left ~= '' and vim.startswith(label, left) then label = cap_hl .. left .. tab.hl .. label:sub(#left + 1) end
+
+  local right = escape(tab.caps.right)
+  local from = right ~= '' and H.find_last(label, right) or nil
+  if from ~= nil then
+    label = label:sub(1, from - 1) .. cap_hl .. right .. '%#MiniTablineFill#' .. label:sub(from + #right)
+  end
+
+  return label
 end
 
 H.find_last = function(s, pattern)

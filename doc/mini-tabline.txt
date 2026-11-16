@@ -83,6 +83,14 @@ Some options are set automatically by |MiniTabline.setup()|:
 - `MiniTablineGitAdd` - count of added lines.
 - `MiniTablineGitChange` - count of changed lines.
 - `MiniTablineGitDelete` - count of deleted lines.
+- `MiniTablineCurrentCap` - caps of current tab (see `current_caps` in
+  |MiniTabline.config|).
+- `MiniTablineModifiedCurrentCap` - caps of current tab if it is modified.
+
+Cap groups are computed (not linked): foreground is the background of
+`MiniTablineCurrent` (or `MiniTablineModifiedCurrent`) and background is
+the background of `MiniTablineFill`. They are recomputed after setup and on
+|ColorScheme|, so change those groups instead.
 
 To change any highlight group, set it directly with |nvim_set_hl()|.
 
@@ -140,6 +148,10 @@ Defaults ~
     -- Whether to show git change counts after the label
     -- (requires 'mini.diff' or 'gitsigns.nvim')
     show_git_changes = false,
+
+    -- Strings around the current tab (like Nerd Font U+E0B6 and U+E0B4 for
+    -- rounded caps, see |MiniTabline.config|)
+    current_caps = { left = '', right = '' },
   }
 <
 # Format ~
@@ -163,6 +175,19 @@ or 'gitsigns.nvim' (`vim.b.gitsigns_status_dict`).
 Both are added after the formatted label (before `config.separator`) and
 are cached, so they don't slow down tabline redraws. The tabline is
 redrawn when they change.
+
+# Current tab caps ~
+
+`config.current_caps` adds `left` and `right` strings around the current
+tab (including its position, before `config.separator`). They are colored
+with `MiniTablineCurrentCap` (see |MiniTabline-hl-groups|) so that they
+look like a rounded (or slanted, etc.) end of the current tab. Example
+with rounded Nerd Font caps (U+E0B6 and U+E0B4): >lua
+
+  current_caps = { left = '\238\130\182', right = '\238\130\180' }
+<
+This looks best when other tabs have the same background as
+`MiniTablineFill`.
 
 Example of adding "+" suffix for modified buffers: >lua
 
